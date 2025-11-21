@@ -1,6 +1,8 @@
     #include <iostream>
     #include <winsock2.h> // windows 소켓 프로그래밍을 하기 위한 함수 목록
     #include <windows.h> 
+    #include <string>
+    #include <thread> // 멀티스레딩을 위한 스레드 관련 함수 목록
     #include <ws2tcpip.h> // TCP/IP 관련 함수 목록
     #pragma comment(lib, "ws2_32.lib") // 실제 DLL과 연결하기 위한 라이브러리 링크
 
@@ -10,9 +12,63 @@
 
     using namespace std;
 
+    
+    
+    void client_thread(     SOCKET* mySock,
+                            SOCKET* otherSock,
+                            const char* myName, 
+                            const char* otherName, 
+                            SOCKET listenSocket, 
+                            sockaddr_in& clientAddr, 
+                            int& clientAddrSize
+){
+        // 게임 루프 시작.
+        // client로 부터 받을 메시지를 저장할 버퍼
+        char buffer[256];
+        while (true){
+            //메시지 길이, byte 단위 char = 1byte, sizeof(buffer)-1 = \0을 위한 공간 확보
+            int recvLen1 = recv(*mySock, buffer, sizeof(buffer)-1,0); // Player1으로부터 메시지 수신
+            //player1이 접속 종료시 recvLen1 <=0 재접속 대기
+            if(recvLen1 <= 0){
+                cout << *myName <<" 접속 종료됨" << endl;
+                if(*otherSock != INVALID_SOCKET){ // 다른 플레이어가 접속 중이라면 알려주기
+                    string msg = string(myName) + " 연결 끊김"; //char* to string 
+                    send(*otherSock, msg.c_str(), msg.length(), 0);
+                }
+
+                closesocket(*mySock);
+                *mySock = INVALID_SOCKET;
+
+                //재접속을 대기
+                while(*mySock == INVALID_SOCKET){
+                    *mySock = accept(listenSocket, (sockaddr*)&clientAddr, &clientAddrSize);
+                    if(*mySock == INVALID_SOCKET){
+                        cout << myName << " 접속 실패 / 대기중..." << endl;
+                    }
+                }
+
+                //재접속 성공 알려주기
+                cout << myName << " 재접속 성공!" << endl;
+                string recon = string(myName) + " 재접속 성공!";
+                send(*mySock, recon.c_str(), recon.length(), 0); //자기 자신에게 재접속 성공 메시지 전송
+                if(*otherSock != INVALID_SOCKET){ // 다른 플레이어가 접속 중이라면 알려주기
+                    string msg = string(myName) + " 재접속됨"; //char* to string 
+                    send(*otherSock, msg.c_str(), msg.length(), 0);
+                }
+            }
+            //정상 메시지 수신
+            buffer[recvLen1] = '\0'; // 수신된 메시지의 끝에 널 문자 추가.
+            cout << "[" << myName << "]: " << buffer << endl;
+            if (*otherSock!= INVALID_SOCKET){
+                send(*otherSock, buffer, recvLen1, 0); // 다른 플레이어에게 메시지 전송
+            }
+        }
+    }
+
     int main(){
         SetConsoleOutputCP(CP_UTF8); // 콘솔 출력을 UTF-8로 설정
         SetConsoleCP(CP_UTF8); // 콘솔 입력을 UTF-8로 설정
+        
         WSADATA wsa;
         int r = WSAStartup(MAKEWORD(2,2), &wsa); //2.2 버전 winsock 사용
         if(r != 0){
@@ -51,10 +107,10 @@
         } 
 
         cout << "서버 대기중. 접속을 기다리는 중..." << endl;
-
-        // client 2명의 접속 받기.
+        
         SOCKET Player1 = INVALID_SOCKET;
         SOCKET Player2 = INVALID_SOCKET;
+        
         
         sockaddr_in clientAddr;
         int clientAddrSize = sizeof(clientAddr); // sockaddr_in 구조체 크기
@@ -78,64 +134,31 @@
         send(Player1, "CONNECTED p1", strlen("CONNECTED p1"), 0);
         send(Player2, "CONNECTED p2", strlen("CONNECTED p2"), 0);
 
-        // client로 부터 받을 메시지를 저장할 버퍼
-        char buffer[256];
+        // 클라이언트 스레드 시작
+        thread t1(client_thread,
+                  &Player1, 
+                  &Player2, 
+                  "Player1", 
+                  "Player2", 
+                  listenSocket, 
+                  ref(clientAddr), 
+                  ref(clientAddrSize)
+        );
+
+        thread t2(client_thread,
+                  &Player2, 
+                  &Player1, 
+                  "Player2", 
+                  "Player1", 
+                  listenSocket, 
+                  ref(clientAddr), 
+                  ref(clientAddrSize)
+        );
+
+        t1.join(); // 이 스레드들이 실행되면 main은 여기서 접속이 끊어질때 까지 대기
+        t2.join();
 
 
-        // 게임 루프 시작.
-        while (true){
-            //메시지 길이, byte 단위 char = 1byte, sizeof(buffer)-1 = \0을 위한 공간 확보
-            int recvLen1 = recv(Player1, buffer, sizeof(buffer)-1,0); // Player1으로부터 메시지 수신
-            //player1이 접속 종료시 recvLen1 <=0 재접속 대기
-            if(recvLen1 <= 0){
-                cout << "Player1 접속 종료됨" << endl;
-                send(Player2, "PLAYER1_DISCONNECTED", strlen("PLAYER1_DISCONNECTED"), 0);
-                closesocket(Player1);
-                Player1 = INVALID_SOCKET;
-                //재접속을 대기
-                while(Player1 == INVALID_SOCKET){
-                    Player1 = accept(listenSocket, (sockaddr*)&clientAddr, &clientAddrSize);
-                    if(Player1 == INVALID_SOCKET){
-                        cout << "Player1 접속 실패 / 대기중..." << endl;
-                    }
-                }
-                //재접속 성공 알려주기
-                cout << "Player1 재접속 성공!" << endl;
-
-                send(Player1, "RECONNECTED P1", strlen("RECONNECTED P1"), 0);
-                send(Player2, "PLAYER1_RECONNECTED", strlen("PLAYER1_RECONNECTED"), 0);
-                continue;
-            }
-            //정상 메시지 수신
-            buffer[recvLen1] = '\0'; // 수신된 메시지의 끝에 널 문자 추가.
-            cout << "[Player1]: " << buffer << endl;
-            send(Player2, buffer, recvLen1, 0); // Player2에게 Player 1의 메시지 전달
-        
-            int recvLen2 = recv(Player2, buffer, sizeof(buffer)-1,0); // Player2으로부터 메시지 수신
-        
-            if(recvLen2 <= 0){
-                cout << "Player2 접속 종료됨" << endl;
-                send(Player1, "PLAYER2_DISCONNECTED", strlen("PLAYER2_DISCONNECTED"), 0);
-                closesocket(Player2);
-                Player2 = INVALID_SOCKET;
-                //재접속을 대기
-                while(Player2 == INVALID_SOCKET){
-                    Player2 = accept(listenSocket, (sockaddr*)&clientAddr, &clientAddrSize);
-                    if(Player2 == INVALID_SOCKET){
-                        cout << "Player2 접속 실패 / 대기중..." << endl;
-                    }
-                }
-                cout << "Player2 재접속 성공!" << endl;
-                send(Player2, "RECONNECTED P2", strlen("RECONNECTED P2"), 0);
-                send(Player1, "PLAYER2_RECONNECTED", strlen("PLAYER2_RECONNECTED"), 0);
-
-                continue;
-            }
-            //정상 메시지 수신
-            buffer[recvLen2] = '\0'; // 수신된 메시지의 끝에 널 문자 추가.
-            cout << "[Player2]: " << buffer << endl;
-            send(Player1, buffer, recvLen2, 0); // Player1에게 Player 2의 메시지 전달
-        }
         // 소켓 닫기 및 winsock 종료
         closesocket(Player1);
         closesocket(Player2);

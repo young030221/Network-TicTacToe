@@ -7,7 +7,7 @@
 import socket #TCP 소켓을 사용하기 위한 라이브러리
 import threading # 멀티스레딩(동시에 여러일 Ex)출력,입력)을 위한 스레드 관련 라이브러리
 
-SERVER_IP = "172.18.43.206" # 학교에서 테스트할때 기준 IP
+
 SERVER_PORT= 7777 # 서버 포트 번호
 
 #thread될 함수
@@ -20,11 +20,11 @@ def receive_thread(sock):
                 break
             print("\n[Server]:",data.decode()) #sock은 데이터를 byte형태로 받기때문에
                 #출력을 위해서 decode()로 문자열 형태로 변경
-            print(">> ", end='')
         except: #try문에서 에러 발생시
             break
 
 def main():
+    SERVER_IP = input("접속할 서버 IP를 입력하세요: ")
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)#IPv4, TCP
     try:
         sock.connect((SERVER_IP, SERVER_PORT)) #서버에 연결 요청
@@ -40,7 +40,7 @@ def main():
 
     #메인 스레드 : 사용자 입력
     while True:
-        msg = input(">> ") #입력 대기
+        msg = input("") #입력 대기
         if msg == "/quit": #사용자가 /quit 입력시 종료
             break
         sock.send(msg.encode()) #메시지 전송, 받을때와 반대로 문자열을 byte형태로 encoding
