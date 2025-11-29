@@ -1,3 +1,4 @@
+    
     #include <iostream>
     #include <winsock2.h> // windows 소켓 프로그래밍을 하기 위한 함수 목록
     #include <windows.h> 
@@ -6,13 +7,14 @@
     #include <ws2tcpip.h> // TCP/IP 관련 함수 목록
     #pragma comment(lib, "ws2_32.lib") // 실제 DLL과 연결하기 위한 라이브러리 링크
 
-    #include "protocol.hpp"
+    #include "game.hpp"
+
 
     #define SERVER_PORT 7777 // 서버 포트 번호 일단 아무거나.
 
     using namespace std;
 
-    
+    Game game;
     
     void client_thread(     SOCKET* mySock,
                             SOCKET* otherSock,
@@ -20,17 +22,18 @@
                             const char* otherName, 
                             SOCKET listenSocket, 
                             sockaddr_in& clientAddr, 
-                            int& clientAddrSize
-){
+                            int& clientAddrSize,
+                            Game *game 
+    ){
         // 게임 루프 시작.
         // client로 부터 받을 메시지를 저장할 버퍼
         char buffer[256];
         while (true){
             //메시지 길이, byte 단위 char = 1byte, sizeof(buffer)-1 = \0을 위한 공간 확보
-            int recvLen1 = recv(*mySock, buffer, sizeof(buffer)-1,0); // Player1으로부터 메시지 수신
-            //player1이 접속 종료시 recvLen1 <=0 재접속 대기
-            if(recvLen1 <= 0){
-                cout << *myName <<" 접속 종료됨" << endl;
+            int recvLen = recv(*mySock, buffer, sizeof(buffer)-1,0); // Player로부터 메시지 수신
+            //player가 접속 종료시 recvLen <=0 재접속 대기
+            if(recvLen <= 0){
+                cout << myName <<" 접속 종료됨" << endl;
                 if(*otherSock != INVALID_SOCKET){ // 다른 플레이어가 접속 중이라면 알려주기
                     string msg = string(myName) + " 연결 끊김"; //char* to string 
                     send(*otherSock, msg.c_str(), msg.length(), 0);
@@ -57,10 +60,51 @@
                 }
             }
             //정상 메시지 수신
-            buffer[recvLen1] = '\0'; // 수신된 메시지의 끝에 널 문자 추가.
+            buffer[recvLen] = '\0'; // 수신된 메시지의 끝에 널 문자 추가.
             cout << "[" << myName << "]: " << buffer << endl;
-            if (*otherSock!= INVALID_SOCKET){
-                send(*otherSock, buffer, recvLen1, 0); // 다른 플레이어에게 메시지 전송
+            ///////////////////////////////////////
+            //---------game logic처리 ------------//
+            ///////////////////////////////////////
+            if(strncmp(buffer,"CLICK",5) == 0){ //buffer의 내용이  CLICK인 경우
+                int pos = atoi(buffer + 6); //click 위치 반환.
+                   
+                // 현재 플레이어에 따라서 X or O
+                char myShape = (strcmp(myName, "Player1")==0 ? 'X' : 'O');
+
+                // 현재 턴이 아니거나 click 위치가 가능하지 않으면
+                if(game->getTurn() != myShape ||!game->isValid(pos))
+                    continue;
+                
+                game->applyClick(pos);
+                
+                //적용된 변화에 대한 msg를 만들어서 각 client에게 전달
+                string msg = string("CLICK ") + to_string(pos) + " " + myShape;
+                send(*mySock,msg.c_str(), msg.size(),0);
+                send(*otherSock,msg.c_str(),msg.size(),0);
+
+                //이겼는지
+                if(game->checkWin(myShape)){
+                    string winmsg = string("WIN ") + myShape;
+                    send(*mySock, winmsg.c_str() , winmsg.size(),0);
+                    string losemsg = "LOSE";
+                    send(*otherSock, losemsg.c_str(),losemsg.size(),0);
+                    continue;
+                }
+                //비겼는지
+                if(game->checkDraw()){
+                    string drawmsg = "DRAW";
+                    send(*mySock, drawmsg.c_str(),drawmsg.size(),0);
+                    send(*otherSock, drawmsg.c_str(),drawmsg.size(),0);
+                    continue;
+                }
+
+                //turn change
+                game->toggleTurn();
+                char next = game->getTurn();
+
+                string tmsg = string("TURN ") + next; // 누구 턴인지 알려주기.
+                send(*mySock, tmsg.c_str(), tmsg.size(), 0);
+                send(*otherSock, tmsg.c_str(), tmsg.size(), 0);
             }
         }
     }
@@ -142,7 +186,8 @@
                   "Player2", 
                   listenSocket, 
                   ref(clientAddr), 
-                  ref(clientAddrSize)
+                  ref(clientAddrSize),
+                  &game
         );
 
         thread t2(client_thread,
@@ -152,7 +197,8 @@
                   "Player1", 
                   listenSocket, 
                   ref(clientAddr), 
-                  ref(clientAddrSize)
+                  ref(clientAddrSize),
+                  &game
         );
 
         t1.join(); // 이 스레드들이 실행되면 main은 여기서 접속이 끊어질때 까지 대기

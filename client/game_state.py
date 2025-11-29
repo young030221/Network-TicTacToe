@@ -4,6 +4,7 @@ class GameState:
         self.turn = "X" #X먼저 시작
         self.game_end = False
         self.winner = None
+        self.my_shape = None
 
     def update_board(self, pos, shape): #위치를 해당 모양으로 변경
         self.board[pos] = shape

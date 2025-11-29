@@ -31,7 +31,7 @@ class UI:
         self.screen.blit(turn_text, (20,440)) #아래쪽에 turn 그리기
 
         if self.game_state.game_end: #game이 끝나면
-            #winner가 DRAW이면 DRAW! , 아니면 X WIN! or OWIN! 이 msg로 들어감
+            #winner가 DRAW이면 DRAW! , 아니면 X WIN! or O WIN! 이 msg로 들어감
             msg = "DRAW!" if self.game_state.winner == "DRAW" else f"{self.game_state.winner} WIN!"
             result = self.shape_font.render(msg, True, (200,0,0)) #빨간색
             self.screen.blit(result,(150,440)) 

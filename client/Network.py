@@ -42,6 +42,7 @@ class Network:
         #tokenize
         parts = msg.split()
         #0번 = 명령 , 1번 = 0~8번 칸의 번호 , 2번 = 모양
+        
         if parts[0] == "CLICK":
             pos = int(parts[1]) # 
             shape = parts[2]
@@ -61,3 +62,8 @@ class Network:
         #비김.
         elif parts[0] == "DRAW":
             self.game_state.set_draw()
+        elif parts[0] == "CONNECTED":
+            if parts[1] == "p1":
+                self.game_state.my_shape = "X"
+            else:
+                self.game_state.my_shape = "O"
